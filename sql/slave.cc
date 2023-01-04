@@ -4125,11 +4125,31 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli,
       the user might be surprised to see a claim that the slave is up to date
       long before those queued events are actually executed.
      */
-    if ((!rli->mi->using_parallel() || rli->get_sql_delay())  &&
+    if ((!rli->mi->using_parallel())  &&
         !(ev->is_artificial_event() || ev->is_relay_log_event() || (ev->when == 0)))
     {
       rli->last_master_timestamp= ev->when + (time_t) ev->exec_time;
       DBUG_ASSERT(rli->last_master_timestamp >= 0);
+    }
+    /*
+      In your original proposition to extend the above condition with the
+      sql_thread_caught_up check, you had mentioned that this should be moved
+      here (outside of the condition) to keep consistent with the original
+      logic, that any newly read event from the relay log would negate stcu.
+
+      The problem with this was the FDE/BCE/RE would prematurely negate this
+      before a user event would update after idling. I'll indicate in the test
+      with this patch where it fails.
+
+      Also by duplicating the lmt update into serial/parallel versions which
+      both update at event arrival, we'd need to update this in both places.
+    */
+    //rli->sql_thread_caught_up= false;
+
+    /* so now we'd need something like */
+    if (!rli->mi->using_parallel())
+    {
+      rli->sql_thread_caught_up= false;
     }
 
     /*
@@ -4183,6 +4203,12 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli,
         if (rli->last_master_timestamp < ev->when)
           rli->last_master_timestamp=  ev->when;
       }
+
+      /*
+        Along with this (for parallel version); however, again, it will negate
+        on all events so the actual events which _should_ update lmt will not
+      */
+      rli->sql_thread_caught_up= false;
 
       int res= rli->parallel.do_event(serial_rgi, ev, event_size);
       /*
@@ -7558,7 +7584,7 @@ static Log_event* next_event(rpl_group_info *rgi, ulonglong *event_size)
 
       if (hot_log)
         mysql_mutex_unlock(log_lock);
-      rli->sql_thread_caught_up= false;
+      //rli->sql_thread_caught_up= false;
       DBUG_RETURN(ev);
     }
     if (opt_reckless_slave)                     // For mysql-test
@@ -7725,7 +7751,7 @@ static Log_event* next_event(rpl_group_info *rgi, ulonglong *event_size)
         rli->relay_log.wait_for_update_relay_log(rli->sql_driver_thd);
         // re-acquire data lock since we released it earlier
         mysql_mutex_lock(&rli->data_lock);
-        rli->sql_thread_caught_up= false;
+        //rli->sql_thread_caught_up= false;
         continue;
       }
       /*
