@@ -4177,6 +4177,13 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli,
 
     if (rli->mi->using_parallel())
     {
+      if (unlikely(((rli->last_master_timestamp == 0 || rli->sql_thread_caught_up || rli->get_sql_delay()) &&
+                    !((ev->is_artificial_event() || ev->is_relay_log_event() || (ev->when == 0)) || ev->get_type_code() == FORMAT_DESCRIPTION_EVENT))))
+      {
+        if (rli->last_master_timestamp < ev->when)
+          rli->last_master_timestamp=  ev->when;
+      }
+
       int res= rli->parallel.do_event(serial_rgi, ev, event_size);
       /*
         In parallel replication, we need to update the relay log position
@@ -4186,7 +4193,14 @@ static int exec_relay_log_event(THD* thd, Relay_log_info* rli,
       if (res == 0)
         rli->event_relay_log_pos= rli->future_event_relay_log_pos;
       if (res >= 0)
+      {
+        if (unlikely(rli->sql_thread_caught_up || rli->last_master_timestamp == 0))
+        {
+          if (rli->last_master_timestamp < ev->when)
+                 rli->last_master_timestamp=  ev->when;
+        }
         DBUG_RETURN(res);
+      }
       /*
         Else we proceed to execute the event non-parallel.
         This is the case for pre-10.0 events without GTID, and for handling
