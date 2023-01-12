@@ -17606,9 +17606,8 @@ Item_cond::remove_eq_conds(THD *thd, Item::cond_result *cond_value,
         argument list of cond.
       */
       if (new_item->type() == Item::COND_ITEM &&
-          item->type() == Item::COND_ITEM)
+          ((Item_cond*) new_item)->functype() == this->functype())
       {
-        DBUG_ASSERT(functype() == ((Item_cond *) new_item)->functype());
         List<Item> *new_item_arg_list=
           ((Item_cond *) new_item)->argument_list();
         if (and_level)
@@ -17654,19 +17653,7 @@ Item_cond::remove_eq_conds(THD *thd, Item::cond_result *cond_value,
       }
       else
       {
-        if (new_item->type() == Item::COND_ITEM &&
-            ((Item_cond*) new_item)->functype() ==  functype())
-        {
-          List<Item> *new_item_arg_list=
-            ((Item_cond *) new_item)->argument_list();
-          uint cnt= new_item_arg_list->elements;
-          li.replace(*new_item_arg_list);
-          /* Make iterator li ignore new items */
-          for (cnt--; cnt; cnt--)
-            li++;
-        }
-        else
-          li.replace(new_item);
+        li.replace(new_item);
         should_fix_fields= 1;
       }
     }

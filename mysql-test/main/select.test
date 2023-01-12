@@ -4606,6 +4606,22 @@ SELECT * FROM t1 WHERE (b = 1 OR a = 5) AND (b = 5 AND a = 5 OR 1 != 1);
 DROP TABLE t1;
 
 --echo #
+--echo # MDEV-29294: Assertion `functype() == ((Item_cond *) new_item)->functype()'
+--echo #             failed in Item_cond::remove_eq_conds on SELECT
+--echo #
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2),(3);
+
+SELECT * FROM t1 WHERE a = 1 AND
+  (3 = 0 OR (SELECT a = 1 OR (SELECT 3 WHERE a = a) = 3));
+
+EXPLAIN EXTENDED
+SELECT * FROM t1 WHERE a = 1 AND
+  (3 = 0 OR (SELECT a = 1 OR (SELECT 3 WHERE a = a) = 3));
+
+DROP TABLE t1;
+
+--echo #
 --echo # Bug mdev-4418: impossible multiple equality in OR formula 
 --echo #                after row substitution
 --echo #
