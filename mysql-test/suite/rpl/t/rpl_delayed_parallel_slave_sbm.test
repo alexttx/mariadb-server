@@ -25,6 +25,10 @@ create table t1 (a int);
 set @@GLOBAL.slave_parallel_threads=2;
 --source include/start_slave.inc
 
+--echo #
+--echo # Pt 1) Ensure SBM is updated immediately upon arrival of the next event
+
+--echo # Lock t1 on slave so the first received transaction does not complete/commit
 --connection slave
 LOCK TABLES t1 WRITE;
 
@@ -39,23 +43,16 @@ sleep 1;
 
 --connection slave
 
---echo # Waiting for transaction to arrive on slave and start delaying..
+--echo # Waiting for transaction to arrive on slave and begin SQL Delay..
 --let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting until MASTER_DELAY seconds after master executed event';
 --source include/wait_condition.inc
 
---echo # Validating SBM resets..
---let $cmpv= `SELECT UNIX_TIMESTAMP()- $ts_trx_before_ins`
+--echo # Validating SBM is updated on event arrival..
 --let $sbm_trx1_arrive= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
-if (`SELECT $sbm_trx1_arrive > $cmpv`)
+--let $seconds_since_idling= `SELECT UNIX_TIMESTAMP() - $ts_trx_before_ins`
+if (`SELECT $sbm_trx1_arrive > $seconds_since_idling`)
 {
-    #
-    #
-    # Negating rli->sql_thread_caught_up for all events will fail here because
-    # other events will negate stcu before the insert arrives, and stcu uses
-    # the timestamp of the last committed event (leading to the large gap)
-    #
-    #
-    --echo # SBM was $sbm_trx1_arrive yet shouldn't have been larger than $cmpv
+    --echo # SBM was $sbm_trx1_arrive yet shouldn't have been larger than $seconds_since_idling
     --die Seconds_Behind_Master should reset after idling
 }
 --echo # ..done
@@ -65,8 +62,10 @@ UNLOCK TABLES;
 --source include/sync_with_master_gtid.inc
 
 --echo #
---echo # Pt 2) Ensure later events don't update SBM if SQL thread doesn't idle
+--echo # Pt 2) If the SQL thread has not entered an idle state, ensure
+--echo # following events do not update SBM
 
+--echo # Stop slave IO thread so it receives both events together on restart
 --connection slave
 --source include/stop_slave_io.inc
 
@@ -92,39 +91,26 @@ LOCK TABLES t1 WRITE;
 
 START SLAVE IO_THREAD;
 
---echo # Wait for first transaction to start
+--echo # Wait for first transaction to complete SQL delay and begin execution..
 --let $wait_condition= SELECT count(*) FROM information_schema.processlist WHERE state LIKE 'Waiting for table metadata lock%';
 --source include/wait_condition.inc
 
---echo # Validating SBM doesn't use the second transaction because SQL thread shouldn't have gone idle..
+--echo # Validate SBM calculation doesn't use the second transaction because SQL thread shouldn't have gone idle..
 --let $sbm_after_trx_no_idle= query_get_value(SHOW SLAVE STATUS, Seconds_Behind_Master, 1)
 --let $timestamp_trxpt2_arrive= `SELECT UNIX_TIMESTAMP()`
 if (`SELECT $sbm_after_trx_no_idle <= $timestamp_trxpt2_arrive - $ts_trx_after_ins`)
 {
-    #
-    #
-    # adding conditions of not updating stcu on certain events (e.g. fde) will
-    # fail here or the next one, depending on which events are blacklisted from
-    # updating stcu
-    #
-    #
     --echo # SBM was $sbm_after_trx_no_idle
     --die Seconds_Behind_Master should not have used second transaction timestamp
 }
---let $cmpv= `SELECT ($timestamp_trxpt2_arrive - $ts_trxpt2_before_ins)`
+--let $seconds_since_idling= `SELECT ($timestamp_trxpt2_arrive - $ts_trxpt2_before_ins)`
 --echo # ..and that SBM wasn't calculated using prior committed transactions
-if (`SELECT $sbm_after_trx_no_idle > $cmpv`)
+if (`SELECT $sbm_after_trx_no_idle > $seconds_since_idling`)
 {
-    --echo # SBM was $sbm_after_trx_no_idle yet shouldn't have been larger than $cmpv
+    --echo # SBM was $sbm_after_trx_no_idle yet shouldn't have been larger than $seconds_since_idling
     --die Seconds_Behind_Master calculation should not have used prior committed transaction
 }
 --echo # ..done
-
-#
-#
-# Updating stcu only when lmt is updated passes
-#
-#
 
 
 --connection slave
