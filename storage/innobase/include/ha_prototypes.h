@@ -37,8 +37,8 @@ simple headers.
 /* Forward declarations */
 class THD;
 class Field;
-class TABLE;
-class dict_table_t;
+struct TABLE;
+struct dict_table_t;
 
 // JAN: TODO missing features:
 #undef MYSQL_FT_INIT_EXT
