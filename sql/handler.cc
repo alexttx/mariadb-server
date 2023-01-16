@@ -4181,7 +4181,7 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
   KEY_PART_INFO *keypart, *keypartend;
 
   if (table->s->incompatible_version)
-    return HA_ADMIN_NEEDS_UPGRADE;
+    return HA_ADMIN_NEEDS_ALTER;
 
   if (!table->s->mysql_version)
   {
@@ -4207,7 +4207,7 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt)
     }
   }
   if (table->s->frm_version < FRM_VER_TRUE_VARCHAR)
-    return HA_ADMIN_NEEDS_UPGRADE;
+    return HA_ADMIN_NEEDS_ALTER;
 
   if (unlikely((error= check_collation_compatibility())))
     return error;
@@ -4230,11 +4230,11 @@ int handler::check_old_types()
     {
       if ((*field)->type() == MYSQL_TYPE_NEWDECIMAL)
       {
-        return HA_ADMIN_NEEDS_UPGRADE;
+        return HA_ADMIN_NEEDS_ALTER;
       }
       if ((*field)->type() == MYSQL_TYPE_VAR_STRING)
       {
-        return HA_ADMIN_NEEDS_UPGRADE;
+        return HA_ADMIN_NEEDS_ALTER;
       }
     }
   }

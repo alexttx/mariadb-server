@@ -772,9 +772,7 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
       int check_for_upgrade= file->ha_check_for_upgrade(check_opt);
 
       if (check_old_types == HA_ADMIN_NEEDS_ALTER ||
-          check_old_types == HA_ADMIN_NEEDS_UPGRADE ||
-          check_for_upgrade == HA_ADMIN_NEEDS_ALTER ||
-          check_for_upgrade == HA_ADMIN_NEEDS_UPGRADE)
+          check_for_upgrade == HA_ADMIN_NEEDS_ALTER)
       {
         /* We use extra_open_options to be able to open crashed tables */
         thd->open_options|= extra_open_options;
@@ -1150,6 +1148,7 @@ send_result_message:
     }
 
     case HA_ADMIN_NEEDS_UPGRADE:
+    case HA_ADMIN_NEEDS_ALTER:
     {
       char buf[MYSQL_ERRMSG_SIZE];
       size_t length;
@@ -1165,21 +1164,6 @@ send_result_message:
         length= my_snprintf(buf, sizeof(buf),
                             ER_THD(thd, ER_TABLE_NEEDS_REBUILD),
                             table->table_name.str);
-      protocol->store(buf, length, system_charset_info);
-      fatal_error=1;
-      break;
-    }
-
-    case HA_ADMIN_NEEDS_ALTER:
-    {
-      DBUG_ASSERT(!table->view);
-      char buf[MYSQL_ERRMSG_SIZE];
-      size_t length;
-
-      protocol->store(STRING_WITH_LEN("error"), system_charset_info);
-      length= my_snprintf(buf, sizeof(buf),
-                          ER_THD(thd, ER_TABLE_NEEDS_REBUILD),
-                          table->table_name.str);
       protocol->store(buf, length, system_charset_info);
       fatal_error=1;
       break;
